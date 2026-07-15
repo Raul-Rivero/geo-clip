@@ -25,7 +25,7 @@ REQUIRED PATCH to your local clone's geoclip/model/GeoCLIP.py:
 
 Usage:
     python train_driver.py --backbone clip --data_csv train.csv --image_dir ./images --val_csv val.csv --epochs 5
-    python train_driver.py --backbone siglip2-l --data_csv train.csv --image_dir ./images --val_csv val.csv --epochs 5
+    python train_driver.py --backbone siglip2-so400m --data_csv train.csv --image_dir ./images --val_csv val.csv --epochs 5
 """
 
 import argparse
@@ -69,7 +69,7 @@ def get_optimizer_and_scheduler(model):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backbone", choices=["clip", "siglip2-l"], required=True)
+    parser.add_argument("--backbone", choices=["clip", "siglip2-so400m"], required=True)
     parser.add_argument("--data_csv", required=True,
                          help="Training CSV with IMG_FILE/LAT/LON columns")
     parser.add_argument("--image_dir", required=True)
@@ -93,7 +93,7 @@ def main():
     train_dataset = GeoDataLoader(
         dataset_file=args.data_csv,
         dataset_folder=args.image_dir,
-        transform=img_train_transform(),
+        transform=img_train_transform(args.backbone),
     )
     train_loader = DataLoader(
         train_dataset,
@@ -109,7 +109,7 @@ def main():
         val_dataset = GeoDataLoader(
             dataset_file=args.val_csv,
             dataset_folder=args.image_dir,
-            transform=img_val_transform(),
+            transform=img_val_transform(args.backbone),
         )
         val_loader = DataLoader(
             val_dataset,

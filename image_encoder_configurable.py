@@ -7,7 +7,7 @@ choose the backbone at construction time instead of hardcoding CLIP.
 
 Usage:
     encoder = ImageEncoder(backbone="clip")      # original GeoCLIP recipe
-    encoder = ImageEncoder(backbone="siglip2-l")  # our SigLIP2-L ablation
+    encoder = ImageEncoder(backbone="siglip2-so400m")  # our SigLIP2-So400M ablation
 
 Drop this in to replace geoclip/model/image_encoder.py, or import it
 directly and wire it into your own copy of GeoCLIP.py in place of the
@@ -18,15 +18,28 @@ import torch
 import torch.nn as nn
 from transformers import CLIPModel, AutoModel, AutoProcessor
 
-# backbone_id -> (huggingface repo id, native output dim)
-# Native output dims confirmed empirically in our Colab probe:
-#   CLIP ViT-L/14      -> 768
-#   SigLIP2-L/16-384    -> 1024
-#   SigLIP2-So400M/14-384 -> 1152  (uncomment if you want to try this variant)
+# backbone_id -> config dict. Single source of truth for anything that
+# depends on which backbone is active -- the checkpoint id, the native
+# feature dim the mlp head is built for, and the preprocessing (image size +
+# normalization stats) that both preprocess_image() and the training
+# dataloader (geoclip/train/dataloader.py) must agree on.
+# Native output dims and preprocessing stats confirmed against each
+# checkpoint's actual HF config (preprocessor_config.json / vision_config).
 BACKBONE_REGISTRY = {
-    "clip": ("openai/clip-vit-large-patch14", 768),
-    "siglip2-l": ("google/siglip2-large-patch16-384", 1024),
-    # "siglip2-so400m": ("google/siglip2-so400m-patch14-384", 1152),
+    "clip": {
+        "hf_id": "openai/clip-vit-large-patch14",
+        "native_dim": 768,
+        "image_size": 224,
+        "image_mean": [0.485, 0.456, 0.406],  # ImageNet stats (matches original GeoCLIP dataloader)
+        "image_std": [0.229, 0.224, 0.225],
+    },
+    "siglip2-so400m": {
+        "hf_id": "google/siglip2-so400m-patch14-224",
+        "native_dim": 1152,
+        "image_size": 224,
+        "image_mean": [0.5, 0.5, 0.5],  # SigLIP2's own preprocessor_config.json
+        "image_std": [0.5, 0.5, 0.5],
+    },
 }
 
 
@@ -34,7 +47,7 @@ class ImageEncoder(nn.Module):
     def __init__(self, backbone: str = "clip", output_dim: int = 512):
         """
         Args:
-            backbone: one of the keys in BACKBONE_REGISTRY ("clip" or "siglip2-l")
+            backbone: one of the keys in BACKBONE_REGISTRY ("clip" or "siglip2-so400m")
             output_dim: final embedding size, must match the location encoder's
                         output dim (512 in the original GeoCLIP repo -- do not
                         change this unless you're also changing location_encoder.py)
@@ -47,7 +60,8 @@ class ImageEncoder(nn.Module):
                 f"Choose from {list(BACKBONE_REGISTRY.keys())}"
             )
         self.backbone_name = backbone
-        hf_id, native_dim = BACKBONE_REGISTRY[backbone]
+        cfg = BACKBONE_REGISTRY[backbone]
+        hf_id, native_dim = cfg["hf_id"], cfg["native_dim"]
 
         # --- Load the backbone itself ---
         if backbone == "clip":
@@ -71,6 +85,8 @@ class ImageEncoder(nn.Module):
             nn.ReLU(),
             nn.Linear(native_dim, output_dim),
         )
+        self.native_dim = native_dim
+        self._shape_checked = False  # one-time runtime verification, see forward()
 
     def preprocess_image(self, image):
         x = self.image_processor(images=image, return_tensors="pt")["pixel_values"]
@@ -84,6 +100,23 @@ class ImageEncoder(nn.Module):
             if not torch.is_tensor(features):
                 # Some AutoModel variants wrap output in a container object
                 features = features.pooler_output if hasattr(features, "pooler_output") else features[0]
+
+        # One-time runtime shape check: confirms the input tensor actually
+        # reaching the backbone is [B, 3, 224, 224] and its pooled output is
+        # [B, native_dim] -- the checkpoint string lining up with the registry
+        # on paper doesn't guarantee upstream code is feeding the right shape.
+        if not self._shape_checked:
+            print(f"[{self.backbone_name}] encoder input shape: {tuple(x.shape)} "
+                  f"| backbone output shape: {tuple(features.shape)}")
+            assert x.shape[1] == 3 and x.shape[-2:] == (224, 224), (
+                f"[{self.backbone_name}] expected input [B, 3, 224, 224], got {tuple(x.shape)}"
+            )
+            assert features.shape[-1] == self.native_dim, (
+                f"[{self.backbone_name}] expected backbone output dim {self.native_dim}, "
+                f"got {features.shape[-1]}"
+            )
+            self._shape_checked = True
+
         x = self.mlp(features)
         return x
 
@@ -95,7 +128,7 @@ class ImageEncoder(nn.Module):
 if __name__ == "__main__":
     # Quick sanity check -- run this file directly to confirm both backbones
     # load correctly and produce the expected output shape.
-    for backbone in ["clip", "siglip2-l"]:
+    for backbone in ["clip", "siglip2-so400m"]:
         enc = ImageEncoder(backbone=backbone)
         dummy = torch.randn(2, 3, 224, 224)
         # Note: real usage should go through preprocess_image() on actual PIL

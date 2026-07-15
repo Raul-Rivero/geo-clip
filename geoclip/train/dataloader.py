@@ -8,27 +8,34 @@ from PIL import Image as im
 from torchvision import transforms
 from torch.utils.data import Dataset
 
-def img_train_transform():
+from image_encoder_configurable import BACKBONE_REGISTRY
+
+def img_train_transform(backbone="clip"):
+    cfg = BACKBONE_REGISTRY[backbone]
+    size = cfg["image_size"]
     train_transform_list = transforms.Compose([
-        transforms.RandomResizedCrop(224),
+        transforms.RandomResizedCrop(size),
         transforms.RandomHorizontalFlip(),
         transforms.RandomApply([transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
         transforms.PILToTensor(),
         transforms.ConvertImageDtype(torch.float),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        transforms.Normalize(cfg["image_mean"], cfg["image_std"])
     ])
     return train_transform_list
 
-def img_val_transform():
+def img_val_transform(backbone="clip"):
+    cfg = BACKBONE_REGISTRY[backbone]
+    size = cfg["image_size"]
+    resize_to = round(size * 256 / 224)  # preserve the resize-then-center-crop margin, scaled to the active backbone's native size
     val_transform_list = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
+            transforms.Resize(resize_to),
+            transforms.CenterCrop(size),
             transforms.PILToTensor(),
             transforms.ConvertImageDtype(torch.float),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+            transforms.Normalize(cfg["image_mean"], cfg["image_std"])
         ])
-    return val_transform_list    
+    return val_transform_list
 
 
 class GeoDataLoader(Dataset):
