@@ -81,7 +81,7 @@ class GeoDataLoader(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.images[idx]
-        gps = self.coordinates[idx]
+        gps = torch.tensor(self.coordinates[idx], dtype=torch.float32)
 
         image = im.open(img_path).convert('RGB')
         
