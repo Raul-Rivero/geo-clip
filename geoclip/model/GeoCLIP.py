@@ -17,7 +17,7 @@ class GeoCLIP(nn.Module):
         self.image_encoder = image_encoder if image_encoder is not None else ImageEncoder()
         self.location_encoder = LocationEncoder(from_pretrained=from_pretrained)
 
-        self.gps_gallery = load_gps_data(os.path.join(file_dir, "gps_gallery", "coordinates_100K.csv"))
+        self.register_buffer("gps_gallery", load_gps_data(os.path.join(file_dir, "gps_gallery", "coordinates_100K.csv")))
         self._initialize_gps_queue(queue_size)
 
         if from_pretrained:
