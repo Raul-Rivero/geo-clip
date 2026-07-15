@@ -76,7 +76,7 @@ def main():
     parser.add_argument("--val_csv", default=None,
                          help="Optional validation CSV; if omitted, skips eval between epochs")
     parser.add_argument("--epochs", type=int, default=5)
-    parser.add_argument("--batch_size", type=int, default=512,
+    parser.add_argument("--batch_size", type=int, default=256,
                          help="NOTE: GeoCLIP's dequeue_and_enqueue requires "
                               "queue_size % batch_size == 0 -- default queue_size "
                               "is 4096, so batch sizes like 512, 256, 128, 64 all "
@@ -85,6 +85,9 @@ def main():
     parser.add_argument("--checkpoint_dir", default="./checkpoints")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
+
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     print(f"Backbone: {args.backbone} | Device: {args.device} | Batch size: {args.batch_size}")
@@ -95,12 +98,16 @@ def main():
         dataset_folder=args.image_dir,
         transform=img_train_transform(args.backbone),
     )
+    g = torch.Generator()
+    g.manual_seed(42)
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
         drop_last=True,  # avoid a final partial batch breaking the queue math
+        generator=g,
     )
     print(f"Train set: {len(train_dataset):,} images, {len(train_loader):,} batches/epoch")
 
