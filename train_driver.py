@@ -84,13 +84,16 @@ def main():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--checkpoint_dir", default="./checkpoints")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--seed", type=int, default=42,
+                         help="Random seed for reproducibility; vary this across "
+                              "replication runs to check result stability.")
     args = parser.parse_args()
 
-    torch.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
-    print(f"Backbone: {args.backbone} | Device: {args.device} | Batch size: {args.batch_size}")
+    print(f"Backbone: {args.backbone} | Device: {args.device} | Batch size: {args.batch_size} | Seed: {args.seed}")
 
     # --- Data: GeoDataLoader is a Dataset, must be wrapped in a real DataLoader ---
     train_dataset = GeoDataLoader(
@@ -99,7 +102,7 @@ def main():
         transform=img_train_transform(args.backbone),
     )
     g = torch.Generator()
-    g.manual_seed(42)
+    g.manual_seed(args.seed)
 
     train_loader = DataLoader(
         train_dataset,
@@ -152,7 +155,7 @@ def main():
         if val_loader is not None:
             eval_images(val_loader, model, device=args.device)
 
-        ckpt_path = os.path.join(args.checkpoint_dir, f"{args.backbone}_epoch{epoch}.pt")
+        ckpt_path = os.path.join(args.checkpoint_dir, f"{args.backbone}_seed{args.seed}_epoch{epoch}.pt")
         torch.save({
             "epoch": epoch,
             "backbone": args.backbone,
